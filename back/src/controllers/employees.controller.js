@@ -1,8 +1,13 @@
 import { pool } from "../config/db.js"; // unchanged – db.js now exports a named `pool`
+import bcrypt from "bcrypt";
+
+const SALT_ROUNDS = 10;
 
 export const getUsers = async (req, res) => {
   try {
     const { rows } = await pool.query("SELECT * FROM employees");
+    // never expose password hashes in API responses
+    rows.forEach((r) => delete r.password);
     res.json(rows);
   } catch (err) {
     console.error("getUsers error", err);
@@ -19,7 +24,9 @@ export const getUserById = async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ message: "Employee not found" });
     }
-    res.json(rows[0]);
+    const employee = rows[0];
+    delete employee.password; // hide hash
+    res.json(employee);
   } catch (err) {
     console.error("getUserById error", err);
     res.status(500).json({ message: "Internal server error" });
@@ -29,6 +36,8 @@ export const getUserById = async (req, res) => {
 export const createUser = async (req, res) => {
   try {
     const data = req.body;
+    // hash the password before storing
+    const hashed = await bcrypt.hash(data.password, SALT_ROUNDS);
     const { rows } = await pool.query(
       "INSERT INTO employees (tipo_identificacion,numero_identificacion, nombre, apellido, email, telefono, cargo, fecha_contratacion, username, password) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
       [
@@ -41,10 +50,12 @@ export const createUser = async (req, res) => {
         data.cargo,
         data.fecha_contratacion,
         data.username,
-        data.password,
+        hashed,
       ],
     );
-    res.json(rows[0]);
+    const employee = rows[0];
+    delete employee.password;
+    res.json(employee);
   } catch (err) {
     console.error("createUser error", err);
     res.status(500).json({ message: "Internal server error" });
@@ -73,12 +84,18 @@ export const updateUser = async (req, res) => {
     const { id } = req.params;
     const data = req.body;
 
+    // if password provided, hash it
+    let hashedPassword = data.password;
+    if (data.password) {
+      hashedPassword = await bcrypt.hash(data.password, SALT_ROUNDS);
+    }
+
     const { rows } = await pool.query(
       "UPDATE employees SET username = $1, email = $2, password = $3, nombre = $4, apellido = $5, telefono = $6 WHERE id = $7 RETURNING *",
       [
         data.username,
         data.email,
-        data.password,
+        hashedPassword,
         data.nombre,
         data.apellido,
         data.telefono,
@@ -88,7 +105,9 @@ export const updateUser = async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ message: "Employee not found" });
     }
-    return res.json(rows[0]);
+    const employee = rows[0];
+    delete employee.password;
+    return res.json(employee);
   } catch (err) {
     console.error("updateUser error", err);
     res.status(500).json({ message: "Internal server error" });

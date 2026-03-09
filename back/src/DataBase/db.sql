@@ -61,9 +61,9 @@ CREATE TABLE IF NOT EXISTS rentals (
     estado_alquiler VARCHAR(20) NOT NULL DEFAULT 'activo',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- Las restricciones van aquí abajo
-    FOREIGN KEY (cliente_id) REFERENCES clients(id) ON DELETE RESTRICT,
-    FOREIGN KEY (vehiculo_id) REFERENCES vehicles(id) ON DELETE RESTRICT,
-    FOREIGN KEY (id_empleado) REFERENCES employees(id) ON DELETE RESTRICT
+    FOREIGN KEY (cliente_id) REFERENCES clients(id) ON DELETE CASCADE,
+    FOREIGN KEY (vehiculo_id) REFERENCES vehicles(id) ON DELETE CASCADE,
+    FOREIGN KEY (id_empleado) REFERENCES employees(id) ON DELETE CASCADE
 );
 
 --- tabla de pagos  ---
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS payments (
     referencia_pago VARCHAR(255),
     estado_pago VARCHAR(20) NOT NULL DEFAULT 'pendiente',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (alquiler_id) REFERENCES rentals(id) ON DELETE RESTRICT
+    FOREIGN KEY (alquiler_id) REFERENCES rentals(id) ON DELETE CASCADE
 );
 
 --- tabla de mantenimiento  ---
@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS maintenance (
     taller VARCHAR(100) NOT NULL,
     responsable VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (vehiculo_id) REFERENCES vehicles(id) ON DELETE RESTRICT
+    FOREIGN KEY (vehiculo_id) REFERENCES vehicles(id) ON DELETE CASCADE
 );
 
 -- 1. Empleado

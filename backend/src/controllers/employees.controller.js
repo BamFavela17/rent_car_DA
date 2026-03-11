@@ -1,4 +1,4 @@
-import { pool } from "../config/db.js"; // unchanged – db.js now exports a named `pool`
+import pool  from "../config/db.js"; 
 import bcrypt from "bcrypt";
 
 const SALT_ROUNDS = 10;
@@ -6,7 +6,6 @@ const SALT_ROUNDS = 10;
 export const getUsers = async (req, res) => {
   try {
     const { rows } = await pool.query("SELECT * FROM employees");
-    // never expose password hashes in API responses
     rows.forEach((r) => delete r.password);
     res.json(rows);
   } catch (err) {

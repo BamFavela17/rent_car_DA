@@ -6,13 +6,16 @@ import {
   getUsers,
   updateUser,
 } from "../controllers/employees.controller.js";
+import { protect } from "../middleware/auth.middleeare.js";
+
 const router = Router();
+router.use(protect); // protejo todas las rutas de este router
 
 router.get("/users", getUsers);
 
 router.get("/users/:id", getUserById);
 
-router.post("/users", createUser);
+router.post("/createUser", createUser);
 
 router.delete("/users/:id", deleteUser);
 

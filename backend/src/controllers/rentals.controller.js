@@ -1,5 +1,29 @@
 import pool from "../config/db.js";
 
+const isVehicleCurrentlyRented = async (client, vehicleId) => {
+  const { rows } = await client.query(
+    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler != 'finalizado' AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin LIMIT 1",
+    [vehicleId],
+  );
+  return rows.length > 0;
+};
+
+const isVehicleUnderMaintenanceToday = async (client, vehicleId) => {
+  const { rows } = await client.query(
+    "SELECT 1 FROM maintenance WHERE vehiculo_id = $1 AND estado_mantenimiento != 'completado' AND CURRENT_DATE BETWEEN fecha_mantenimiento AND fechafinal_mantenimiento LIMIT 1",
+    [vehicleId],
+  );
+  return rows.length > 0;
+};
+
+const setVehicleAvailability = async (client, vehicleId) => {
+  const rented = await isVehicleCurrentlyRented(client, vehicleId);
+  const underMaintenance = await isVehicleUnderMaintenanceToday(client, vehicleId);
+  const available = !rented && !underMaintenance;
+  await client.query("UPDATE vehicles SET estado = $1 WHERE id = $2", [available, vehicleId]);
+  return available;
+};
+
 export const getRentals = async (req, res) => {
   try {
     const query = `
@@ -71,11 +95,33 @@ export const getRentalsReport = async (req, res) => {
   }
 };
 
+const computeRentalTotal = async (client, vehicleId, fechaInicio, horaInicio, fechaFin, horaFin) => {
+  if (!vehicleId || !fechaInicio || !fechaFin) return 0;
+  const { rows: vehicleRows } = await client.query("SELECT tarifa_diaria FROM vehicles WHERE id = $1", [vehicleId]);
+  if (vehicleRows.length === 0) return 0;
+
+  const tarifa = Number(vehicleRows[0].tarifa_diaria || 0);
+  const start = new Date(`${fechaInicio}T${horaInicio || "00:00"}:00`);
+  const end = new Date(`${fechaFin}T${horaFin || "00:00"}:00`);
+  const diffMs = end - start;
+  const days = diffMs > 0 ? Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24))) : 1;
+  return Number((days * tarifa).toFixed(2));
+};
+
 export const createRental = async (req, res) => {
   const client = await pool.connect();
   try {
     const data = req.body;
     await client.query("BEGIN");
+
+    const computedTotal = await computeRentalTotal(
+      client,
+      data.vehiculo_id,
+      data.fecha_inicio,
+      data.hora_inicio,
+      data.fecha_fin,
+      data.hora_fin,
+    );
 
     const { rows } = await client.query(
       "INSERT INTO rentals (cliente_id, vehiculo_id, id_empleado, fecha_inicio, hora_inicio, fecha_fin, hora_fin, kilometraje_inicio, kilometraje_fin, total, forma_pago, estado_alquiler) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *",
@@ -89,14 +135,13 @@ export const createRental = async (req, res) => {
         data.hora_fin,
         data.kilometraje_inicio,
         data.kilometraje_fin,
-        data.total,
+        computedTotal,
         data.forma_pago,
         data.estado_alquiler || 'activo',
       ]
     );
 
-    // Automatización: Cambiar el estado del vehículo a no disponible (false)
-    await client.query("UPDATE vehicles SET estado = false WHERE id = $1", [data.vehiculo_id]);
+    await setVehicleAvailability(client, data.vehiculo_id);
 
     await client.query("COMMIT");
     res.json(rows[0]);
@@ -127,8 +172,7 @@ export const deleteRental = async (req, res) => {
 
     const vehiculoId = rows[0].vehiculo_id;
 
-    // Automatización: Volver a poner el vehículo como disponible (true)
-    await client.query("UPDATE vehicles SET estado = true WHERE id = $1", [vehiculoId]);
+    await setVehicleAvailability(client, vehiculoId);
 
     await client.query("COMMIT");
     return res.sendStatus(204);
@@ -166,6 +210,15 @@ export const updateRental = async (req, res) => {
 
     const oldVehiculoId = currentRental.rows[0].vehiculo_id;
 
+    const computedTotal = await computeRentalTotal(
+      client,
+      data.vehiculo_id,
+      data.fecha_inicio,
+      data.hora_inicio,
+      data.fecha_fin,
+      data.hora_fin,
+    );
+
     const { rows } = await client.query(
       "UPDATE rentals SET cliente_id=$1, vehiculo_id=$2, id_empleado=$3, fecha_inicio=$4, hora_inicio=$5, fecha_fin=$6, hora_fin=$7, kilometraje_inicio=$8, kilometraje_fin=$9, total=$10, forma_pago=$11, estado_alquiler=$12, notificado=FALSE WHERE id=$13 RETURNING *",
       [
@@ -178,22 +231,19 @@ export const updateRental = async (req, res) => {
         data.hora_fin,
         data.kilometraje_inicio,
         data.kilometraje_fin,
-        data.total,
+        computedTotal,
         data.forma_pago,
         data.estado_alquiler,
         id,
       ]
     );
 
-    // Gestión de estado de vehículos
+    // Gestión de estado de vehículos: siempre recalculamos disponibilidad del vehículo afectado.
     if (oldVehiculoId !== parseInt(data.vehiculo_id)) {
-      // Si el vehículo cambió, liberamos el viejo y ocupamos el nuevo
-      await client.query("UPDATE vehicles SET estado = true WHERE id = $1", [oldVehiculoId]);
-      await client.query("UPDATE vehicles SET estado = false WHERE id = $1", [data.vehiculo_id]);
-    }
-
-    if (data.estado_alquiler === 'finalizado') {
-      await client.query("UPDATE vehicles SET estado = true WHERE id = $1", [data.vehiculo_id]);
+      await setVehicleAvailability(client, oldVehiculoId);
+      await setVehicleAvailability(client, data.vehiculo_id);
+    } else {
+      await setVehicleAvailability(client, data.vehiculo_id);
     }
 
     await client.query("COMMIT");

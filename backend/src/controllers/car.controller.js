@@ -30,7 +30,7 @@ export const createCar = async (req, res) => {
   try {
     const data = req.body;
     const { rows } = await pool.query(
-      "INSERT INTO vehicles (placa, marca, modelo, year_car, color, tipo, capacidad, tarifa_diaria, año) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+      "INSERT INTO vehicles (placa, marca, modelo, year_car, color, tipo, capacidad, tarifa_diaria) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
       [
         data.placa,
         data.marca,
@@ -40,7 +40,6 @@ export const createCar = async (req, res) => {
         data.tipo,
         data.capacidad,
         data.tarifa_diaria,
-        data.año,
       ],
     );
     res.json(rows[0]);
@@ -72,7 +71,7 @@ export const updateCar = async (req, res) => {
     const { id } = req.params;
     const data = req.body;
     const { rows } = await pool.query(
-      "UPDATE vehicles SET placa=$1, marca=$2, modelo=$3, year_car=$4, color=$5, tipo=$6, capacidad=$7, tarifa_diaria=$8, año=$9, estado=$10 WHERE id=$11 RETURNING *",
+      "UPDATE vehicles SET placa=$1, marca=$2, modelo=$3, year_car=$4, color=$5, tipo=$6, capacidad=$7, tarifa_diaria=$8, estado=$9 WHERE id=$10 RETURNING *",
       [
         data.placa,
         data.marca,
@@ -82,8 +81,7 @@ export const updateCar = async (req, res) => {
         data.tipo,
         data.capacidad,
         data.tarifa_diaria,
-        data.año,
-        data.estadp,
+        data.estado,
         id,
       ],
     );
@@ -92,7 +90,7 @@ export const updateCar = async (req, res) => {
     }
     res.json(rows[0]);
   } catch (err) {
-    console.log("updateVehicle error", err);
+    console.log("updateCar error", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };

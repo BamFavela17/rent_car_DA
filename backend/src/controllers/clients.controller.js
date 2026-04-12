@@ -28,16 +28,18 @@ export const createClients = async (req, res) => {
   try {
     const data = req.body;
     const { rows } = await pool.query(
-      "INSERT INTO clients (nombre, apellido, email, telefono, cargo, fecha_contratacion, username, password) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *",
+      "INSERT INTO clients (tipo_identificacion, numero_identificacion, nombre, apellido, email, telefono, direccion, fecha_nacimiento, licencia_conduccion, fecha_vencimiento_licencia) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
       [
+        data.tipo_identificacion,
+        data.numero_identificacion,
         data.nombre,
         data.apellido,
         data.email,
         data.telefono,
-        data.cargo,
-        data.fecha_contratacion,
-        data.username,
-        data.password,
+        data.direccion,
+        data.fecha_nacimiento,
+        data.licencia_conduccion,
+        data.fecha_vencimiento_licencia,
       ],
     );
     res.json(rows[0]);

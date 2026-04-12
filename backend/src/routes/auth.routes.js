@@ -60,6 +60,67 @@ router.post("/login", async (req, res) => {
   });
 });
 
+// Register
+router.post("/register", async (req, res) => {
+  const { name, email, password } = req.body;
+
+  if (!name || !email || !password) {
+    return res
+      .status(400)
+      .json({ message: "Please provide name, email and password" });
+  }
+
+  const existingUser = await pool.query(
+    "SELECT id FROM employees WHERE email = $1 OR username = $2",
+    [email, email],
+  );
+
+  if (existingUser.rows.length > 0) {
+    return res.status(400).json({ message: "Email already registered" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const nombre = name;
+  const apellido = "";
+  const username = email;
+  const tipoIdentificacion = "CC";
+  const numeroIdentificacion = "0000000000";
+  const telefono = "0000000000";
+  const cargo = "Empleado";
+  const fechaContratacion = new Date().toISOString().split("T")[0];
+
+  const { rows } = await pool.query(
+    "INSERT INTO employees (tipo_identificacion, numero_identificacion, nombre, apellido, email, telefono, cargo, fecha_contratacion, username, password) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *",
+    [
+      tipoIdentificacion,
+      numeroIdentificacion,
+      nombre,
+      apellido,
+      email,
+      telefono,
+      cargo,
+      fechaContratacion,
+      username,
+      hashedPassword,
+    ],
+  );
+
+  const userData = rows[0];
+  const token = generateToken(userData.id);
+  res.cookie("token", token, cookieOptions);
+
+  res.json({
+    user: {
+      id: userData.id,
+      name: userData.nombre,
+      apellido: userData.apellido,
+      email: userData.email,
+      cargo: userData.cargo,
+      username: userData.username,
+    },
+  });
+});
+
 // Me
 router.get("/me", protect, async (req, res) => {
   res.json(req.user);

@@ -10,6 +10,12 @@ import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Employees from "./pages/Employees/index.jsx";
+import Cars from "./pages/Cars/index.jsx";
+import Clients from "./pages/Clients/index.jsx";
+import Rentals from "./pages/Rentals/index.jsx";
+import Maintenance from "./pages/Maintenance/index.jsx";
+import Payments from "./pages/Payments/index.jsx";
 import NotFound from "./components/NotFound";
 
 axios.defaults.withCredentials = true;
@@ -50,6 +56,12 @@ function App() {
           path="/register"
           element={user ? <Navigate to="/" /> : <Register setUser={setUser} />}
         />
+        <Route path="/employees" element={user ? <Employees /> : <Navigate to="/login" />} />
+        <Route path="/cars" element={user ? <Cars /> : <Navigate to="/login" />} />
+        <Route path="/clients" element={user ? <Clients /> : <Navigate to="/login" />} />
+        <Route path="/rentals" element={user ? <Rentals /> : <Navigate to="/login" />} />
+        <Route path="/maintenance" element={user ? <Maintenance /> : <Navigate to="/login" />} />
+        <Route path="/payments" element={user ? <Payments /> : <Navigate to="/login" />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Router>

@@ -1,0 +1,198 @@
+import React from "react";
+import CrudPage from "../../components/CrudPage";
+
+const fields = [
+  {
+    name: "cliente_id",
+    label: "Cliente",
+    type: "number",
+    valueType: "number",
+    required: true,
+    optionsEndpoint: "/api/clients/clients",
+    optionLabel: "nombre apellido",
+    optionValue: "id",
+    helpText: "Selecciona el cliente que realizará el alquiler.",
+  },
+  {
+    name: "vehiculo_id",
+    label: "Vehículo",
+    type: "number",
+    valueType: "number",
+    required: true,
+    optionsEndpoint: "/api/cars/cars",
+    optionLabel: "placa marca",
+    optionValue: "id",
+    helpText: "Selecciona el vehículo para que se use su tarifa diaria en el cálculo.",
+  },
+  {
+    name: "id_empleado",
+    label: "Empleado",
+    type: "number",
+    valueType: "number",
+    required: true,
+    optionsEndpoint: "/api/employees/users",
+    optionLabel: "nombre apellido",
+    optionValue: "id",
+    helpText: "El empleado responsable del contrato de alquiler.",
+  },
+  {
+    name: "fecha_inicio",
+    label: "Fecha de inicio",
+    type: "date",
+    required: true,
+    helpText: "Fecha en que comienza el alquiler.",
+  },
+  {
+    name: "hora_inicio",
+    label: "Hora de inicio",
+    type: "time",
+    required: true,
+    helpText: "Hora en la que inicia el alquiler.",
+  },
+  {
+    name: "fecha_fin",
+    label: "Fecha de fin",
+    type: "date",
+    required: true,
+    helpText: "Fecha en que finaliza el alquiler.",
+  },
+  {
+    name: "hora_fin",
+    label: "Hora de fin",
+    type: "time",
+    required: true,
+    helpText: "Hora en la que termina el alquiler.",
+  },
+  {
+    name: "tarifa_diaria",
+    label: "Tarifa diaria",
+    type: "number",
+    readOnly: true,
+    computed: true,
+    helpText: "Precio por día del vehículo seleccionado.",
+    compute: (formData, helpers) => {
+      const vehicle = helpers.getOptionByValue("vehiculo_id", formData.vehiculo_id);
+      if (!vehicle) return "";
+      const tarifa = Number(vehicle.tarifa_diaria ?? vehicle.tarifa_diaria ?? 0);
+      return tarifa ? Number(tarifa.toFixed(2)) : "";
+    },
+  },
+  
+  {
+    name: "kilometraje_inicio",
+    label: "Kilometraje inicial",
+    type: "number",
+    placeholder: "0",
+    required: true,
+    helpText: "Kilometraje del vehículo al inicio del alquiler.",
+  },
+  {
+    name: "dias_alquiler",
+    label: "Días de alquiler",
+    type: "number",
+    readOnly: true,
+    computed: true,
+    helpText: "Cantidad de días calculada automáticamente según fechas de inicio y fin.",
+    compute: (formData, helpers) => {
+      return helpers.calculateRentalDays(
+        formData.fecha_inicio,
+        formData.hora_inicio,
+        formData.fecha_fin,
+        formData.hora_fin,
+      ) || "";
+    },
+  },
+  {
+    name: "kilometraje_fin",
+    label: "Kilometraje final",
+    type: "number",
+    placeholder: "0",
+    required: true,
+    helpText: "Kilometraje del vehículo al finalizar el alquiler.",
+  },
+  {
+    name: "total",
+    label: "Total",
+    type: "number",
+    step: "0.01",
+    placeholder: "0.00",
+    required: true,
+    readOnly: true,
+    computed: true,
+    helpText: "Total calculado automáticamente según días de alquiler y tarifa diaria.",
+    compute: (formData, helpers) => {
+      const { getOptionByValue, calculateRentalDays } = helpers;
+      const days = calculateRentalDays(
+        formData.fecha_inicio,
+        formData.hora_inicio,
+        formData.fecha_fin,
+        formData.hora_fin,
+      );
+      const vehicle = getOptionByValue("vehiculo_id", formData.vehiculo_id);
+      const price = vehicle ? Number(vehicle.tarifa_diaria ?? vehicle.tarifa_diaria ?? 0) : 0;
+      if (!days || !price) return "";
+      return Number((days * price).toFixed(2));
+    },
+  },
+  {
+    name: "forma_pago",
+    label: "Forma de pago",
+    required: true,
+    options: [
+      { label: "Efectivo", value: "Efectivo" },
+      { label: "Tarjeta", value: "Tarjeta" },
+      { label: "Transferencia", value: "Transferencia" },
+      { label: "Otro", value: "Otro" },
+    ],
+    helpText: "Selecciona el método de pago acordado.",
+  },
+  {
+    name: "estado_alquiler",
+    label: "Estado del alquiler",
+    required: true,
+    options: [
+      { label: "Activo", value: "activo" },
+      { label: "Completado", value: "completado" },
+      { label: "En Proceso...", value: "en_proceso" },
+      { label: "Cancelado", value: "cancelado" },
+      { label: "Pendiente", value: "pendiente" },
+    ],
+    helpText: "Selecciona el estado actual del alquiler.",
+  },
+];
+
+const listColumns = [
+  "id",
+  "cliente_nombre",
+  "cliente_apellido",
+  "vehiculo_marca",
+  "vehiculo_modelo",
+  "vehiculo_placa",
+  "fecha_inicio",
+  "fecha_fin",
+  "total",
+  "estado_alquiler",
+];
+
+const Rentals = () => (
+  <CrudPage
+    title="Alquileres"
+    description="Administra los contratos de alquiler en el sistema."
+    instructions={[
+      "Selecciona el cliente, vehículo y empleado responsable.",
+      "Registra las fechas y horas de inicio y fin del alquiler.",
+      "Introduce el kilometraje inicial y final para llevar control.",
+      "El total se calcula automáticamente según la tarifa diaria y los días de alquiler.",
+      "Confirma la forma de pago antes de guardar.",
+    ]}
+    listEndpoint="/api/rentals/rentals"
+    createEndpoint="/api/rentals/createRental"
+    updateEndpoint="/api/rentals/rentals"
+    deleteEndpoint="/api/rentals/rentals"
+    fields={fields}
+    listColumns={listColumns}
+    modalScrollable={true}
+  />
+);
+
+export default Rentals;

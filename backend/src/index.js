@@ -6,6 +6,12 @@ import cors from "cors";
 
 import authRoutes from "./routes/auth.routes.js";
 import employeeRoutes from "./routes/employees.routes.js";
+import carRoutes from "./routes/car.routes.js";
+import clientsRoutes from "./routes/clients.routes.js";
+import rentalsRoutes from "./routes/rentals.routes.js";
+import maintenanceRoutes from "./routes/maintenance.routes.js";
+import paymentRoutes from "./routes/payments.routes.js";
+
 dotenv.config();
 
 const app = express();
@@ -19,8 +25,13 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
-app.use("/api/employees", employeeRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/employees", employeeRoutes);
+app.use("/api/cars", carRoutes);
+app.use("/api/clients", clientsRoutes);
+app.use("/api/rentals", rentalsRoutes);
+app.use("/api/maintenance", maintenanceRoutes);
+app.use("/api/payments", paymentRoutes);
 
 // Ruta no encontrada
 app.use((req, res) => {

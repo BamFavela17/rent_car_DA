@@ -1,16 +1,16 @@
-import { pool } from "../config/db.js";
+import pool from "../config/db.js";
 
-export const getVehicles = async (req, res) => {
+export const getCars = async (req, res) => {
   try {
     const { rows } = await pool.query("SELECT * FROM vehicles");
     res.json(rows);
   } catch (err) {
-    console.error("getVehicles error", err);
+    console.error("getCars error", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
-export const getVehicleById = async (req, res) => {
+export const getCarById = async (req, res) => {
   try {
     const { id } = req.params;
     const { rows } = await pool.query("SELECT * FROM vehicles WHERE id = $1", [
@@ -26,11 +26,11 @@ export const getVehicleById = async (req, res) => {
   }
 };
 
-export const createVehicle = async (req, res) => {
+export const createCar = async (req, res) => {
   try {
     const data = req.body;
     const { rows } = await pool.query(
-      "INSERT INTO vehicles (placa, marca, modelo, year_car, color,tipo,capacidad, tarifa_diaria, año) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+      "INSERT INTO vehicles (placa, marca, modelo, year_car, color, tipo, capacidad, tarifa_diaria, año) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
       [
         data.placa,
         data.marca,
@@ -45,12 +45,12 @@ export const createVehicle = async (req, res) => {
     );
     res.json(rows[0]);
   } catch (err) {
-    console.log("createVehicle error", err);
+    console.log("createCar error", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
 
-export const deleteVehicle = async (req, res) => {
+export const deleteCar = async (req, res) => {
   try {
     const { id } = req.params;
     const { rowCount } = await pool.query(
@@ -62,11 +62,12 @@ export const deleteVehicle = async (req, res) => {
     }
     return res.sendStatus(204);
   } catch (err) {
-    console.log("deletedVehicle error", err);
+    console.log("deleteCar error", err);
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
-export const updateVehicle = async (req, res) => {
+export const updateCar = async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;

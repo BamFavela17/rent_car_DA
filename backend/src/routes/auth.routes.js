@@ -2,7 +2,7 @@ import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import pool from "../config/db.js";
-import { protect } from "../middleware/auth.middleeare.js";
+import { protect } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 

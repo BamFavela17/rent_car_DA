@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { createClients, deleteClient, getClients, getClientsById, updateClient } from "../controllers/clients.controller.js";
-import { protect } from "../middleware/auth.middleeare.js";
+import { protect } from "../middleware/auth.middleware.js";
 
 const router = Router();
 router.use(protect); // protejo todas las rutas de este router

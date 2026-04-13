@@ -1,9 +1,11 @@
 import pool from "../config/db.js";
 
+const activeRentalStates = ["activo", "proceso"];
+
 const isVehicleCurrentlyRented = async (client, vehicleId) => {
   const { rows } = await client.query(
-    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler != 'finalizado' AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin LIMIT 1",
-    [vehicleId],
+    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler = ANY($2) AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin LIMIT 1",
+    [vehicleId, activeRentalStates],
   );
   return rows.length > 0;
 };
@@ -22,6 +24,31 @@ const setVehicleAvailability = async (client, vehicleId) => {
   const available = !rented && !underMaintenance;
   await client.query("UPDATE vehicles SET estado = $1 WHERE id = $2", [available, vehicleId]);
   return available;
+};
+
+const hasOverlappingActiveRental = async (client, vehicleId, fechaInicio, fechaFin, excludeRentalId = null) => {
+  let query = `
+    SELECT 1 FROM rentals
+    WHERE vehiculo_id = $1
+      AND estado_alquiler = ANY($2)
+      AND fecha_inicio <= $4
+      AND fecha_fin >= $3
+  `;
+  const params = [vehicleId, activeRentalStates, fechaInicio, fechaFin];
+  if (excludeRentalId) {
+    query += " AND id != $5";
+    params.push(excludeRentalId);
+  }
+  const { rows } = await client.query(query, params);
+  return rows.length > 0;
+};
+
+const rentalHasPendingPayment = async (client, rentalId) => {
+  const { rows } = await client.query(
+    "SELECT 1 FROM payments WHERE alquiler_id = $1 AND estado_pago = 'pendiente' LIMIT 1",
+    [rentalId],
+  );
+  return rows.length > 0;
 };
 
 export const getRentals = async (req, res) => {
@@ -123,6 +150,21 @@ export const createRental = async (req, res) => {
       data.hora_fin,
     );
 
+    const estadoAlquiler = String(data.estado_alquiler || 'activo').toLowerCase();
+
+    if (activeRentalStates.includes(estadoAlquiler)) {
+      const isBlocked = await hasOverlappingActiveRental(
+        client,
+        data.vehiculo_id,
+        data.fecha_inicio,
+        data.fecha_fin,
+      );
+      if (isBlocked) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "El vehículo ya está ocupado en el rango de fechas seleccionado" });
+      }
+    }
+
     const { rows } = await client.query(
       "INSERT INTO rentals (cliente_id, vehiculo_id, id_empleado, fecha_inicio, hora_inicio, fecha_fin, hora_fin, kilometraje_inicio, kilometraje_fin, total, forma_pago, estado_alquiler) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *",
       [
@@ -137,7 +179,7 @@ export const createRental = async (req, res) => {
         data.kilometraje_fin,
         computedTotal,
         data.forma_pago,
-        data.estado_alquiler || 'activo',
+        estadoAlquiler,
       ]
     );
 
@@ -209,6 +251,27 @@ export const updateRental = async (req, res) => {
     }
 
     const oldVehiculoId = currentRental.rows[0].vehiculo_id;
+    const currentStatus = String(currentRental.rows[0].estado_alquiler || '').toLowerCase();
+    const newStatus = String(data.estado_alquiler || currentStatus).toLowerCase();
+
+    if (newStatus === 'finalizado' && await rentalHasPendingPayment(client, id)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "No se puede finalizar un alquiler cuando hay pagos pendientes" });
+    }
+
+    if (activeRentalStates.includes(newStatus)) {
+      const isBlocked = await hasOverlappingActiveRental(
+        client,
+        data.vehiculo_id,
+        data.fecha_inicio,
+        data.fecha_fin,
+        id,
+      );
+      if (isBlocked) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ message: "El vehículo ya está ocupado en el rango de fechas seleccionado" });
+      }
+    }
 
     const computedTotal = await computeRentalTotal(
       client,
@@ -233,7 +296,7 @@ export const updateRental = async (req, res) => {
         data.kilometraje_fin,
         computedTotal,
         data.forma_pago,
-        data.estado_alquiler,
+        newStatus,
         id,
       ]
     );

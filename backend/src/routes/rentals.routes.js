@@ -24,11 +24,11 @@ const rentalValidationRules = [
 
       if (!fecha_inicio || !fecha_fin) return true;
 
-      // Consulta para verificar si el cliente ya tiene alquileres activos que se solapen
+      // Consulta para verificar si el cliente ya tiene alquileres en curso que se solapen
       let query = `
         SELECT id FROM rentals 
         WHERE cliente_id = $1 
-        AND estado_alquiler = 'activo'
+        AND estado_alquiler IN ('activo','proceso')
         AND (fecha_inicio <= $3 AND fecha_fin >= $2)
       `;
       const params = [value, fecha_inicio, fecha_fin];
@@ -54,11 +54,11 @@ const rentalValidationRules = [
       // Solo realizamos la comprobación si tenemos ambas fechas
       if (!fecha_inicio || !fecha_fin) return true;
 
-      // Consulta para verificar si existen alquileres activos que se solapen
+      // Consulta para verificar si existen alquileres en curso que se solapen
       let query = `
         SELECT id FROM rentals 
         WHERE vehiculo_id = $1 
-        AND estado_alquiler = 'activo'
+        AND estado_alquiler IN ('activo','proceso')
         AND (fecha_inicio <= $3 AND fecha_fin >= $2)
       `;
       const params = [value, fecha_inicio, fecha_fin];
@@ -76,6 +76,12 @@ const rentalValidationRules = [
       return true;
     }),
   body("id_empleado").isInt().withMessage("El ID del empleado debe ser un número entero"),
+  body("estado_alquiler")
+    .optional()
+    .trim()
+    .toLowerCase()
+    .isIn(["activo", "proceso", "finalizado", "cancelado"])
+    .withMessage("El estado del alquiler no es válido"),
   body("fecha_inicio").isDate().withMessage("Fecha de inicio inválida"),
   body("fecha_fin").isDate().withMessage("Fecha de fin inválida")
     .custom((value, { req }) => {

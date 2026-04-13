@@ -376,10 +376,21 @@ const CrudPage = ({
               <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
                 {fields.map((field) => {
                   const disabled = isEditMode && field.disabledOnEdit;
-                  const options = field.options || optionsByField[field.name] || (field.type === "boolean" ? [
+                  const defaultOptions = field.options || optionsByField[field.name] || (field.type === "boolean" ? [
                     { label: "Sí", value: "true" },
                     { label: "No", value: "false" },
                   ] : []);
+                  let options = defaultOptions;
+                  if (field.optionsFilter) {
+                    options = defaultOptions.filter(field.optionsFilter);
+                    const selectedValue = String(formData[field.name] ?? "");
+                    if (selectedValue) {
+                      const selectedOption = defaultOptions.find((option) => String(getOptionValue(option, field)) === selectedValue);
+                      if (selectedOption && !options.some((option) => String(getOptionValue(option, field)) === selectedValue)) {
+                        options = [...options, selectedOption];
+                      }
+                    }
+                  }
                   const loadingOptions = optionsLoading[field.name];
                   return (
                     <div key={field.name} className={field.fullWidth ? "col-span-full" : ""}>

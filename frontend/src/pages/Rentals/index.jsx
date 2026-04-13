@@ -23,6 +23,7 @@ const fields = [
     optionLabel: "placa marca",
     optionValue: "id",
     helpText: "Selecciona el vehículo para que se use su tarifa diaria en el cálculo.",
+    optionsFilter: (option) => option.estado === true || String(option.estado) === "true",
   },
   {
     name: "id_empleado",

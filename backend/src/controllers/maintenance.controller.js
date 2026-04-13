@@ -1,9 +1,11 @@
 import pool from "../config/db.js";
 
+const activeRentalStates = ["activo", "proceso"];
+
 const isVehicleCurrentlyRented = async (client, vehicleId) => {
   const { rows } = await client.query(
-    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler != 'finalizado' AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin LIMIT 1",
-    [vehicleId],
+    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler = ANY($2) AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin LIMIT 1",
+    [vehicleId, activeRentalStates],
   );
   return rows.length > 0;
 };

@@ -26,7 +26,7 @@ const fields = [
     optionsFilter: (option) => option.estado === true || String(option.estado) === "true",
   },
   {
-    name: "id_empleado",
+    name: "empleado_id",
     label: "Empleado",
     type: "number",
     valueType: "number",
@@ -41,6 +41,7 @@ const fields = [
     label: "Fecha de inicio",
     type: "date",
     required: true,
+    defaultValue: () => new Date().toISOString().split('T')[0],
     helpText: "Fecha en que comienza el alquiler.",
   },
   {
@@ -48,6 +49,7 @@ const fields = [
     label: "Hora de inicio",
     type: "time",
     required: true,
+    defaultValue: () => new Date().toTimeString().slice(0, 5),
     helpText: "Hora en la que inicia el alquiler.",
   },
   {
@@ -55,6 +57,7 @@ const fields = [
     label: "Fecha de fin",
     type: "date",
     required: true,
+    defaultValue: () => new Date().toISOString().split('T')[0],
     helpText: "Fecha en que finaliza el alquiler.",
   },
   {
@@ -62,6 +65,7 @@ const fields = [
     label: "Hora de fin",
     type: "time",
     required: true,
+    defaultValue: () => new Date().toTimeString().slice(0, 5),
     helpText: "Hora en la que termina el alquiler.",
   },
   {
@@ -153,7 +157,7 @@ const fields = [
     required: true,
     options: [
       { label: "Activo", value: "activo" },
-      { label: "Completado", value: "completado" },
+      { label: "Finalizado", value: "finalizado" },
       { label: "En Proceso...", value: "en_proceso" },
       { label: "Cancelado", value: "cancelado" },
       { label: "Pendiente", value: "pendiente" },
@@ -163,37 +167,44 @@ const fields = [
 ];
 
 const listColumns = [
-  "id",
-  "cliente_nombre",
-  "cliente_apellido",
-  "vehiculo_marca",
-  "vehiculo_modelo",
-  "vehiculo_placa",
-  "fecha_inicio",
-  "fecha_fin",
-  "total",
-  "estado_alquiler",
+  { name: "id", label: "ID" },
+  { name: "cliente_nombre", label: "Cliente", render: (row) => `${row.cliente_nombre} ${row.cliente_apellido}` },
+  { name: "vehiculo_marca", label: "Vehículo", render: (row) => `${row.vehiculo_marca} ${row.vehiculo_modelo} (${row.vehiculo_placa})` },
+  { name: "fecha_inicio", label: "Inicio" },
+  { name: "fecha_fin", label: "Fin" },
+  { name: "total", label: "Total" },
+  { name: "estado_alquiler", label: "Estado" },
 ];
 
-const Rentals = () => (
-  <CrudPage
-    title="Alquileres"
-    description="Administra los contratos de alquiler en el sistema."
-    instructions={[
-      "Selecciona el cliente, vehículo y empleado responsable.",
-      "Registra las fechas y horas de inicio y fin del alquiler.",
-      "Introduce el kilometraje inicial y final para llevar control.",
-      "El total se calcula automáticamente según la tarifa diaria y los días de alquiler.",
-      "Confirma la forma de pago antes de guardar.",
-    ]}
-    listEndpoint="/api/rentals/rentals"
-    createEndpoint="/api/rentals/createRental"
-    updateEndpoint="/api/rentals/rentals"
-    deleteEndpoint="/api/rentals/rentals"
-    fields={fields}
-    listColumns={listColumns}
-    modalScrollable={true}
-  />
-);
+const Rentals = () => {
+  return (
+    <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-1 sm:p-4">
+            <CrudPage
+              title="Gestión de Alquileres"
+              description="Administra los contratos de alquiler, control de kilometraje y estados de facturación."
+              instructions={[
+                "Selecciona el cliente, vehículo y empleado responsable.",
+                "Registra las fechas y horas de inicio y fin del alquiler.",
+                "El total se calcula automáticamente según la tarifa diaria y los días.",
+                "Introduce el kilometraje para mantener el control de la flota.",
+              ]}
+              listEndpoint="/api/rentals/rentals"
+              createEndpoint="/api/rentals/createRental"
+              updateEndpoint="/api/rentals/rentals"
+              deleteEndpoint="/api/rentals/rentals"
+              bulkEndpoint="/api/auth/bulk-rentals"
+              fields={fields}
+              listColumns={listColumns}
+              modalScrollable={true}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default Rentals;

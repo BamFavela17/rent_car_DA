@@ -18,6 +18,7 @@ const fields = [
     label: "Fecha de mantenimiento",
     type: "date",
     required: true,
+    defaultValue: () => new Date().toISOString().split('T')[0],
     helpText: "Fecha de inicio del mantenimiento.",
   },
   {
@@ -25,6 +26,7 @@ const fields = [
     label: "Fecha final de mantenimiento",
     type: "date",
     required: true,
+    defaultValue: () => new Date().toISOString().split('T')[0],
     helpText: "Fecha estimada de finalización del mantenimiento.",
   },
   {
@@ -32,6 +34,7 @@ const fields = [
     label: "Fecha del próximo mantenimiento",
     type: "date",
     required: true,
+    defaultValue: () => new Date().toISOString().split('T')[0],
     helpText: "Fecha recomendada para el siguiente mantenimiento.",
   },
   {
@@ -89,32 +92,43 @@ const fields = [
 ];
 
 const listColumns = [
-  "id",
-  "vehiculo_id",
-  "tipo_mantenimiento",
-  "estado_mantenimiento",
-  "fecha_mantenimiento",
-  "fechafinal_mantenimiento",
-  "fecha_proximo_mantenimiento",
+  { name: "id", label: "ID" },
+  { name: "vehiculo_id", label: "Vehículo ID" },
+  { name: "tipo_mantenimiento", label: "Tipo" },
+  { name: "estado_mantenimiento", label: "Estado" },
+  { name: "fecha_mantenimiento", label: "Inicio" },
+  { name: "fechafinal_mantenimiento", label: "Fin" },
+  { name: "fecha_proximo_mantenimiento", label: "Próxima Cita" },
 ];
 
-const Maintenance = () => (
-  <CrudPage
-    title="Mantenimientos"
-    description="Administra los registros de mantenimiento de los vehículos."
-    instructions={[
-      "Selecciona el vehículo y registra las fechas del servicio.",
-      "Describe el tipo de mantenimiento y el trabajo a realizar.",
-      "Indica el costo, estado, taller y responsable para un registro completo.",
-      "Guarda el registro solo cuando todos los datos sean correctos.",
-    ]}
-    listEndpoint="/api/maintenance/maintenances"
-    createEndpoint="/api/maintenance/createMaintenance"
-    updateEndpoint="/api/maintenance/maintenances"
-    deleteEndpoint="/api/maintenance/maintenances"
-    fields={fields}
-    listColumns={listColumns}
-  />
-);
+const Maintenance = () => {
+  return (
+    <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-1 sm:p-4">
+            <CrudPage
+              title="Control de Mantenimiento"
+              description="Seguimiento detallado de servicios preventivos y correctivos de la flota."
+              instructions={[
+                "Selecciona el vehículo y registra las fechas del servicio.",
+                "Describe el tipo de mantenimiento y el trabajo realizado.",
+                "Registra costos y responsables para auditorías internas.",
+                "El sistema liberará el vehículo automáticamente al completar el servicio.",
+              ]}
+              listEndpoint="/api/maintenance/maintenances"
+              createEndpoint="/api/maintenance/createMaintenance"
+              updateEndpoint="/api/maintenance/maintenances"
+              deleteEndpoint="/api/maintenance/maintenances"
+              bulkEndpoint="/api/auth/bulk-maintenance"
+              fields={fields}
+              listColumns={listColumns}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default Maintenance;

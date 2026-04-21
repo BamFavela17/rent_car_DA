@@ -1,6 +1,6 @@
 import pool from "../config/db.js";
 
-const activeRentalStates = ["activo", "proceso"];
+const activeRentalStates = ["activo", "proceso", "en_proceso"];
 
 const isVehicleCurrentlyRented = async (client, vehicleId) => {
   const { rows } = await client.query(

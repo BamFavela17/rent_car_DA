@@ -1,5 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
+import Toast from "../Toast.jsx";
+
+const DEFAULT_FIELDS = [];
+const DEFAULT_COLUMNS = [];
 
 const CrudPage = ({
   title,
@@ -9,14 +13,23 @@ const CrudPage = ({
   createEndpoint,
   updateEndpoint,
   deleteEndpoint,
-  fields,
-  listColumns,
+  bulkEndpoint,
+  fields = DEFAULT_FIELDS,
+  listColumns = DEFAULT_COLUMNS,
+  viewMode = "table",
+  SkeletonComponent,
+  skeletonCount = 6,
+  dataFilter,
+  renderItemCard,
 }) => {
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState({});
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const fileInputRef = useRef(null);
+  const [localToast, setLocalToast] = useState(null);
   const [error, setError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [optionsByField, setOptionsByField] = useState({});
@@ -70,19 +83,6 @@ const CrudPage = ({
     loadOptions();
   }, [listEndpoint, fields]);
 
-  useEffect(() => {
-    const computed = computeFieldValues(formData);
-    setComputedValues(computed);
-  }, [formData, optionsByField, fields]);
-
-  useEffect(() => {
-    if (!formData) return;
-    const needsUpdate = fields.some((field) => field.computed && formData[field.name] !== computedValues[field.name]);
-    if (needsUpdate) {
-      setFormData((prev) => ({ ...prev, ...computedValues }));
-    }
-  }, [computedValues, fields, formData]);
-
   const handleChange = (name, value, type) => {
     let parsedValue = value;
     if (type === "number") {
@@ -95,6 +95,7 @@ const CrudPage = ({
       const nextData = { ...prev, [name]: parsedValue };
       const computed = computeFieldValues(nextData);
       setComputedValues(computed);
+      // Sincronizamos los valores calculados directamente en el estado del formulario
       return { ...nextData, ...computed };
     });
   };
@@ -168,9 +169,13 @@ const CrudPage = ({
     return result;
   };
 
-  const readableHeader = (text) => text
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  // Aplicamos el filtro de datos si existe antes de renderizar o contar
+  const displayItems = dataFilter ? items.filter(dataFilter) : items;
+
+  const readableHeader = (text) => {
+    if (typeof text !== "string") return "";
+    return text.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  };
 
   const singularTitle = (text) => {
     if (text.endsWith("es")) return text.slice(0, -2);
@@ -178,10 +183,69 @@ const CrudPage = ({
     return text;
   };
 
-  const formatCellValue = (value) => {
-    if (value === true || value === "true") return "Sí";
-    if (value === false || value === "false") return "No";
+  const StatusBadge = ({ value }) => {
+    const val = String(value || "").toLowerCase();
+    let base = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ";
+    if (['activo', 'completado', 'pagado', 'sí', 'true', 'disponible'].includes(val)) {
+      base += "bg-emerald-50 text-emerald-700 border-emerald-200";
+    } else if (['pendiente', 'proceso', 'en_proceso', 'en servicio', 'en revisión'].includes(val)) {
+      base += "bg-amber-50 text-amber-700 border-amber-200";
+    } else if (['cancelado', 'no', 'false', 'ocupado'].includes(val)) {
+      base += "bg-rose-50 text-rose-700 border-rose-200";
+    } else if (['finalizado'].includes(val)) {
+      base += "bg-blue-50 text-blue-700 border-blue-200";
+    } else {
+      base += "bg-slate-50 text-slate-700 border-slate-200";
+    }
+    const label = (value === true || value === "true") ? "Sí" : (value === false || value === "false") ? "No" : value;
+    return <span className={base}>{label}</span>;
+  };
+
+  const formatCellValue = (column, value) => {
+    const isBool = value === true || value === false || String(value) === "true" || String(value) === "false";
+    const isStatus = String(column).toLowerCase().includes('estado');
+    
+    if (isBool || isStatus) return <StatusBadge value={value} />;
+
+    const lowerCol = String(column).toLowerCase();
+    const moneyFields = ["total", "costo", "tarifa_diaria", "monto"];
+    if (moneyFields.includes(lowerCol)) {
+      return new Intl.NumberFormat("es-CO", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(value || 0);
+    }
+    
     return String(value ?? "-");
+  };
+
+  const exportToCSV = () => {
+    if (!displayItems.length) return;
+
+    const headers = listColumns.map((col) => (typeof col === "object" ? col.label || readableHeader(col.name) : readableHeader(col))).join(",");
+    const rows = displayItems.map((item) => {
+      return listColumns
+        .map((col) => {
+          const colName = typeof col === "object" ? col.name : col;
+          let val = item[colName];
+          if (val === true || val === "true") val = "Sí";
+          else if (val === false || val === "false") val = "No";
+
+          let stringVal = String(val ?? "");
+          if (stringVal.includes(",") || stringVal.includes('"') || stringVal.includes("\n")) {
+            stringVal = `"${stringVal.replace(/"/g, '""')}"`;
+          }
+          return stringVal;
+        })
+        .join(",");
+    });
+
+    const csvContent = "\uFEFF" + [headers, ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${title.toLowerCase().replace(/\s+/g, "_")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const openModal = (item = null) => {
@@ -198,7 +262,9 @@ const CrudPage = ({
       setSelectedId(null);
       const initialData = fields.reduce((acc, field) => {
         if (field.defaultValue !== undefined) {
-          acc[field.name] = field.defaultValue;
+          acc[field.name] = typeof field.defaultValue === 'function' 
+            ? field.defaultValue() 
+            : field.defaultValue;
         }
         return acc;
       }, {});
@@ -232,7 +298,9 @@ const CrudPage = ({
     setSaving(true);
     setError("");
 
-    const payload = { ...formData, ...computedValues };
+    // Refrescamos los valores calculados (como fecha/hora actual) justo antes de enviar al servidor
+    const latestComputed = computeFieldValues(formData);
+    const payload = { ...formData, ...latestComputed };
 
     try {
       if (selectedId) {
@@ -245,28 +313,62 @@ const CrudPage = ({
       setIsModalOpen(false);
       await refreshList();
     } catch (err) {
-      setError("No se pudo guardar el registro. Revisa los datos e inténtalo nuevamente.");
+      const serverMessage = err?.response?.data?.message;
+      setError(serverMessage || "No se pudo guardar el registro. Revisa los datos e inténtalo nuevamente.");
     } finally {
       setSaving(false);
     }
   };
 
+  const handleBulkUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const jsonData = JSON.parse(e.target.result);
+        if (!Array.isArray(jsonData)) {
+          throw new Error("El archivo debe contener un arreglo de objetos JSON.");
+        }
+
+        setIsBulkUploading(true);
+        const res = await axios.post(bulkEndpoint, jsonData);
+        setLocalToast({ message: res.data.message || "Carga masiva completada con éxito.", type: "success" });
+        if (res.data.ignored?.length > 0) {
+          console.warn("Algunos registros fueron ignorados por ser duplicados:", res.data.ignored);
+        }
+        await refreshList();
+      } catch (err) {
+        setLocalToast({ message: err.response?.data?.message || "Error al procesar el archivo JSON.", type: "error" });
+      } finally {
+        setIsBulkUploading(false);
+        event.target.value = ""; // Reset del input
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const renderTableHeaders = () => {
     if (!listColumns?.length) return null;
     return (
-      <tr className="bg-gray-100 text-left text-sm text-gray-700">
-        {listColumns.map((column) => (
-          <th key={column} className="px-4 py-3 border-b border-gray-200 uppercase tracking-wide">
-            {readableHeader(column)}
-          </th>
-        ))}
-        <th className="px-4 py-3 border-b border-gray-200">Acciones</th>
+      <tr>
+        {listColumns.map((column) => {
+          const colKey = typeof column === "object" ? column.name : column;
+          const colLabel = typeof column === "object" ? column.label || readableHeader(column.name) : readableHeader(column);
+          return (
+            <th key={colKey} className="px-8 py-4 border-b border-slate-100 first:pl-8 last:pr-8">
+              {colLabel}
+            </th>
+          );
+        })}
+        <th className="px-8 py-4 border-b border-slate-100 text-right pr-12">Acciones</th>
       </tr>
     );
   };
 
   const renderTableRows = () => {
-    if (!items.length) {
+    if (!displayItems.length) {
       return (
         <tr>
           <td colSpan={listColumns.length + 1} className="px-4 py-6 text-center text-gray-600">
@@ -276,104 +378,241 @@ const CrudPage = ({
       );
     }
 
-    return items.map((item) => (
-      <tr key={item.id} className={item.id % 2 === 0 ? "bg-white" : "bg-gray-50"}>
-        {listColumns.map((column) => (
-          <td key={`${item.id}-${column}`} className="px-4 py-3 border-b border-gray-200 text-sm text-gray-800">
-            {formatCellValue(item[column])}
-          </td>
-        ))}
-        <td className="px-4 py-3 border-b border-gray-200 text-sm text-gray-800">
-          <button
-            onClick={() => openModal(item)}
-            className="mr-2 text-blue-600 hover:text-blue-800"
-          >
-            Editar
-          </button>
-          <button
-            onClick={() => handleDelete(item.id)}
-            className="text-red-600 hover:text-red-800"
-          >
-            Eliminar
-          </button>
+    return displayItems.map((item) => (
+      <tr key={item.id} className="group hover:bg-slate-50/80 transition-colors duration-150">
+        {listColumns.map((column) => {
+          const colName = typeof column === "object" ? column.name : column;
+          const content = (typeof column === "object" && column.render) ? column.render(item) : formatCellValue(colName, item[colName]);
+          return (
+            <td key={`${item.id}-${colName}`} className="px-8 py-4 text-sm text-slate-600 font-medium whitespace-nowrap">
+              {content}
+            </td>
+          );
+        })}
+        <td className="px-8 py-4 text-right pr-12">
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => openModal(item)}
+              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+              title="Editar"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+            <button
+              onClick={() => handleDelete(item.id)}
+              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+              title="Eliminar"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
         </td>
       </tr>
     ));
   };
 
+  const renderCardGrid = () => {
+    if (!displayItems.length) {
+      return <div className="p-20 text-center text-slate-500 font-medium">No hay registros todavía.</div>;
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 p-8">
+        {displayItems.map((item) => (
+          <div key={item.id} className="group bg-white rounded-[2rem] border border-slate-200/60 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+            {renderItemCard ? renderItemCard(item, { openModal, handleDelete, formatCellValue, StatusBadge }) : (
+              <div className="space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900 line-clamp-1">
+                      {item.marca || item.nombre || 'Registro'} {item.modelo || item.apellido || `#${item.id}`}
+                    </h3>
+                    <p className="text-sm font-semibold text-indigo-600 uppercase tracking-tighter">{item.placa || item.email || item.tipo_identificacion}</p>
+                  </div>
+                  <StatusBadge value={item.estado ?? item.estado_alquiler ?? item.estado_mantenimiento} />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-3 py-4 border-y border-slate-50">
+                  {listColumns.filter(c => {
+                    const name = typeof c === 'object' ? c.name : c;
+                    return !['id', 'estado', 'estado_alquiler', 'marca', 'modelo', 'nombre', 'apellido', 'placa'].includes(name);
+                  }).slice(0, 4).map(col => {
+                    const colName = typeof col === 'object' ? col.name : col;
+                    return (
+                    <div key={colName}>
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{typeof col === 'object' ? col.label : readableHeader(col)}</p>
+                      <p className="text-sm font-semibold text-slate-700 truncate">
+                        {typeof col === 'object' && col.render ? col.render(item) : formatCellValue(colName, item[colName])}
+                      </p>
+                    </div>
+                  )})}
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <div className="flex gap-2">
+                    <button onClick={() => openModal(item)} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    </button>
+                    <button onClick={() => handleDelete(item.id)} className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const isEditMode = Boolean(selectedId);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="rounded-lg bg-white p-6 shadow-sm border border-gray-200">
-          <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-            <div>
-              <h1 className="text-3xl font-semibold text-gray-900">{title}</h1>
-              <p className="mt-2 text-gray-600">{description}</p>
-              {instructions?.length ? (
-                <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700">
-                  <p className="font-semibold text-slate-900">Flujo recomendado</p>
-                  <ol className="mt-2 list-decimal space-y-1 pl-5">
-                    {instructions.map((step, index) => (
-                      <li key={index}>{step}</li>
-                    ))}
-                  </ol>
+    <div className="min-h-screen bg-slate-50/50 p-6 lg:p-10 font-sans selection:bg-indigo-100">
+      {localToast && <Toast message={localToast.message} type={localToast.type} onClose={() => setLocalToast(null)} />}
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header Section */}
+        <div className="relative overflow-hidden rounded-3xl bg-white p-8 shadow-sm border border-slate-200/60">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">{title}</h1>
+              <p className="text-lg text-slate-500 max-w-2xl">{description}</p>
+              {instructions?.length && (
+                <div className="mt-6 flex items-start gap-3 rounded-2xl bg-indigo-50/50 p-5 border border-indigo-100/50">
+                  <div className="mt-1 text-indigo-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="text-sm leading-relaxed text-slate-600">
+                    <p className="font-bold text-indigo-900 mb-1">Guía de uso</p>
+                    <ul className="list-disc pl-4 space-y-1">
+                      {instructions.map((step, index) => <li key={index}>{step}</li>)}
+                    </ul>
+                  </div>
                 </div>
-              ) : null}
+              )}
             </div>
-            <button
-              onClick={() => openModal()}
-              className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-            >
-              Nuevo registro
-            </button>
+            <div className="flex flex-wrap gap-3">
+              {bulkEndpoint && (
+                <>
+                  <input
+                    type="file"
+                    accept=".json"
+                    className="hidden"
+                    ref={fileInputRef}
+                    onChange={handleBulkUpload}
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isBulkUploading}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-50 border border-amber-200 px-6 py-3.5 text-sm font-semibold text-amber-700 shadow-sm transition-all hover:bg-amber-100 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    {isBulkUploading ? "Cargando..." : "Carga Masiva"}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={exportToCSV}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white border border-slate-200 px-6 py-3.5 text-sm font-semibold text-slate-600 shadow-sm transition-all hover:bg-slate-50 hover:-translate-y-0.5 active:translate-y-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Exportar CSV
+              </button>
+              <button
+                onClick={() => openModal()}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition-all hover:bg-indigo-700 hover:-translate-y-0.5 active:translate-y-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                </svg>
+                Nuevo registro
+              </button>
+            </div>
           </div>
+          <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-indigo-50/30 blur-3xl" />
         </div>
 
-        <div className="rounded-lg bg-white p-6 shadow-sm border border-gray-200 overflow-x-auto">
-          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Lista</h2>
-              <p className="text-sm text-gray-600">
-                {loading ? "Esperando datos del servidor..." : `Total de registros: ${items.length}`}
-              </p>
+        <div className="rounded-3xl bg-white shadow-sm border border-slate-200/60 overflow-hidden">
+          <div className="border-b border-slate-100 bg-slate-50/50 px-8 py-5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-bold text-slate-800">Registros</h2>
+              {!loading && (
+                <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-bold text-slate-500 border border-slate-200">
+                  {displayItems.length}
+                </span>
+              )}
             </div>
-            <p className="text-sm text-gray-500">Usa los botones de la tabla para editar o eliminar registros.</p>
+            {loading && <div className="animate-pulse text-sm text-indigo-600 font-medium">Sincronizando...</div>}
           </div>
-          {loading ? (
-            <p className="text-gray-700">Cargando...</p>
-          ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>{renderTableHeaders()}</thead>
-              <tbody>{renderTableRows()}</tbody>
-            </table>
+            {loading ? (
+              viewMode === "grid" && SkeletonComponent ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 p-8">
+                  {[...Array(skeletonCount)].map((_, i) => (
+                    <SkeletonComponent key={i} />
+                  ))}
+                </div>
+              ) : (
+                <div className="p-20 text-center"><div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-indigo-600 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]" /></div>
+              )
+            ) : (
+            viewMode === "grid" ? (
+              renderCardGrid()
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50/80 text-xs font-bold uppercase tracking-wider text-slate-500">
+                    {renderTableHeaders()}
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {renderTableRows()}
+                  </tbody>
+                </table>
+              </div>
+            )
           )}
         </div>
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-black/50 p-4">
-          <div className="w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl max-h-[90vh]">
-            <div className="flex flex-col gap-4 border-b border-gray-200 p-6 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold text-gray-900">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" onClick={closeModal} />
+          <div className="relative w-full max-w-4xl overflow-hidden rounded-[2rem] bg-white shadow-2xl ring-1 ring-slate-200 transition-all flex flex-col max-h-[95vh]">
+            <div className="flex items-center justify-between border-b border-slate-100 px-8 py-6">
+              <div className="space-y-1">
+                <h2 className="text-2xl font-extrabold text-slate-900">
                   {isEditMode ? `Editar ${singularTitle(title)}` : `Nuevo ${singularTitle(title)}`}
                 </h2>
-                <p className="text-sm text-gray-600">
-                  {isEditMode ? "Ajusta los datos que estén disponibles para editar." : "Completa los datos para crear un nuevo registro."}
+                <p className="text-sm font-medium text-slate-500">
+                  {isEditMode ? "Modifica los campos necesarios." : "Ingresa la información requerida."}
                 </p>
               </div>
-              <button
-                onClick={closeModal}
-                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-              >
-                Cerrar
+              <button onClick={closeModal} className="group rounded-full p-2 hover:bg-slate-100 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-slate-400 group-hover:text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-14rem)]">
-              {error && <p className="mb-4 text-red-600">{error}</p>}
-              <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
+            <div className="flex-1 overflow-y-auto p-8 pt-6 scrollbar-thin scrollbar-thumb-slate-200">
+              {error && (
+                <div className="mb-6 flex items-center gap-3 rounded-2xl bg-rose-50 p-4 border border-rose-100 text-rose-700 text-sm font-semibold">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                  {error}
+                </div>
+              )}
+              <form onSubmit={handleSubmit} className="grid gap-6 sm:grid-cols-2">
                 {fields.map((field) => {
                   const disabled = isEditMode && field.disabledOnEdit;
                   const defaultOptions = field.options || optionsByField[field.name] || (field.type === "boolean" ? [
@@ -424,7 +663,7 @@ const CrudPage = ({
                         <textarea
                           value={field.computed || field.readOnly ? computedValues[field.name] ?? formData[field.name] ?? "" : formData[field.name] ?? ""}
                           onChange={(event) => handleChange(field.name, event.target.value)}
-                          className="w-full rounded-md border border-gray-300 p-2 text-sm text-gray-900"
+                          className="w-full min-h-[120px] rounded-xl border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 disabled:bg-slate-100"
                           placeholder={field.placeholder || ""}
                           disabled={disabled || field.readOnly}
                           required={field.required}
@@ -434,7 +673,7 @@ const CrudPage = ({
                           type={field.type || "text"}
                           value={field.computed || field.readOnly ? computedValues[field.name] ?? formData[field.name] ?? "" : formData[field.name] ?? ""}
                           onChange={(event) => handleChange(field.name, event.target.value, field.valueType)}
-                          className="w-full rounded-md border border-gray-300 p-2 text-sm text-gray-900 disabled:bg-gray-100"
+                          className="w-full rounded-xl border-slate-200 bg-slate-50/50 px-4 py-3 text-sm font-medium text-slate-900 outline-none transition-all focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 disabled:bg-slate-100 disabled:text-slate-400"
                           placeholder={field.placeholder || ""}
                           min={field.min}
                           max={field.max}
@@ -453,20 +692,20 @@ const CrudPage = ({
                   );
                 })}
 
-                <div className="col-span-full flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <div className="col-span-full mt-8 flex flex-col gap-3 border-t border-slate-100 pt-8 sm:flex-row sm:justify-end">
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="rounded-md bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300"
+                    className="rounded-2xl border border-slate-200 bg-white px-8 py-3.5 text-sm font-bold text-slate-600 transition-all hover:bg-slate-50 active:scale-95"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={saving}
-                    className="rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+                    className="rounded-2xl bg-indigo-600 px-10 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-100 transition-all hover:bg-indigo-700 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:shadow-none disabled:translate-y-0"
                   >
-                    {saving ? "Guardando..." : isEditMode ? "Actualizar" : "Crear"}
+                    {saving ? "Procesando..." : isEditMode ? "Guardar cambios" : "Crear registro"}
                   </button>
                 </div>
               </form>

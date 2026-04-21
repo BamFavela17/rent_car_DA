@@ -9,16 +9,15 @@ import {
 import { protect } from "../middleware/auth.middleware.js";
 
 const router = Router();
-router.use(protect); // protejo todas las rutas de este router
 
-router.get("/cars", getCars);
+router.get("/cars", getCars); // Ruta pública
 
-router.get("/cars/:id", getCarById);
+router.get("/cars/:id", getCarById); // Ruta pública
 
-router.post("/cars", createCar);
+router.post("/cars", protect, createCar);
 
-router.delete("/cars/:id", deleteCar);
+router.delete("/cars/:id", protect, deleteCar);
 
-router.put("/cars/:id", updateCar);
+router.put("/cars/:id", protect, updateCar);
 
 export default router;

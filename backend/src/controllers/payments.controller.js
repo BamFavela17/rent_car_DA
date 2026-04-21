@@ -1,8 +1,13 @@
 import pool from "../config/db.js";
 
-const normalizePaymentStatus = (status) => String(status || "pendiente").trim().toLowerCase();
+const normalizePaymentStatus = (status) => {
+  const normalized = String(status || "pendiente").trim().toLowerCase();
+  if (normalized === "pagado" || normalized === "completado") return "pagado";
+  if (normalized === "en revision" || normalized === "en_revision" || normalized === "en revisión") return "en_revisión";
+  return normalized;
+};
 
-const activeRentalStates = ["activo", "proceso"];
+const activeRentalStates = ["activo", "proceso", "en_proceso"];
 
 const isVehicleCurrentlyRented = async (client, vehicleId) => {
   const { rows } = await client.query(
@@ -29,13 +34,14 @@ const setVehicleAvailability = async (client, vehicleId) => {
 };
 
 const getRentalPaymentSummary = async (client, rentalId) => {
+  const completedStatuses = ["completado", "pagado"];
   const { rows } = await client.query(
     `SELECT
        SUM(CASE WHEN estado_pago = 'pendiente' THEN 1 ELSE 0 END)::int AS pending_count,
-       SUM(CASE WHEN estado_pago = 'completado' THEN 1 ELSE 0 END)::int AS completed_count
+       SUM(CASE WHEN estado_pago = ANY($2) THEN 1 ELSE 0 END)::int AS completed_count
      FROM payments
      WHERE alquiler_id = $1`,
-    [rentalId],
+    [rentalId, completedStatuses],
   );
   return rows[0] || { pending_count: 0, completed_count: 0 };
 };

@@ -11,9 +11,38 @@ const fields = [
     optionLabel: "cliente_nombre cliente_apellido",
     optionValue: "id",
   },
-  { name: "monto", label: "Monto", type: "number", step: "0.01", placeholder: "200.00", required: true },
-  { name: "fecha_pago", label: "Fecha pago", type: "date", required: true },
-  { name: "hora_pago", label: "Hora pago", type: "time", required: true },
+  { 
+    name: "monto", 
+    label: "Monto", 
+    type: "number", 
+    step: "0.01", 
+    placeholder: "0.00", 
+    required: true,
+    computed: true,
+    readOnly: true,
+    compute: (formData, helpers) => {
+      const rental = helpers.getOptionByValue("alquiler_id", formData.alquiler_id);
+      return rental ? rental.total : "";
+    }
+  },
+  { 
+    name: "fecha_pago", 
+    label: "Fecha pago", 
+    type: "date", 
+    required: true,
+    computed: true,
+    readOnly: true,
+    compute: () => new Date().toISOString().split('T')[0]
+  },
+  { 
+    name: "hora_pago", 
+    label: "Hora pago", 
+    type: "time", 
+    required: true,
+    computed: true,
+    readOnly: true,
+    compute: () => new Date().toTimeString().slice(0, 5)
+  },
   {
     name: "forma_pago",
     label: "Forma de pago",
@@ -58,6 +87,7 @@ const Payments = () => (
     createEndpoint="/api/payments/createPayment"
     updateEndpoint="/api/payments/payments"
     deleteEndpoint="/api/payments/payments"
+    bulkEndpoint="/api/auth/bulk-payments"
     fields={fields}
     listColumns={listColumns}
   />

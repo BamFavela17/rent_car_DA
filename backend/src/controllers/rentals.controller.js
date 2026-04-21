@@ -1,6 +1,13 @@
 import pool from "../config/db.js";
 
-const activeRentalStates = ["activo", "proceso"];
+const activeRentalStates = ["activo", "proceso", "en_proceso"];
+
+const normalizeRentalStatus = (status) => {
+  const normalized = String(status || "activo").trim().toLowerCase();
+  if (normalized === "completado") return "finalizado";
+  if (normalized === "en proceso" || normalized === "en_proceso") return "en_proceso";
+  return normalized;
+};
 
 const isVehicleCurrentlyRented = async (client, vehicleId) => {
   const { rows } = await client.query(
@@ -53,19 +60,29 @@ const rentalHasPendingPayment = async (client, rentalId) => {
 
 export const getRentals = async (req, res) => {
   try {
-    const query = `
+    let query = `
       SELECT 
         r.*, 
+        r.empleado_id,
         c.nombre as cliente_nombre, 
         c.apellido as cliente_apellido, 
         v.marca as vehiculo_marca, 
         v.modelo as vehiculo_modelo, 
-        v.placa as vehiculo_placa
+        v.placa as vehiculo_placa,
+        v.image_url as vehiculo_image_url
       FROM rentals r
       JOIN clients c ON r.cliente_id = c.id
       JOIN vehicles v ON r.vehiculo_id = v.id
     `;
-    const { rows } = await pool.query(query);
+    const params = [];
+
+    // Si el usuario es un Cliente, solo puede ver su propio historial
+    if (req.user && req.user.cargo === 'Cliente') {
+      query += " WHERE r.cliente_id = $1";
+      params.push(req.user.id);
+    }
+
+    const { rows } = await pool.query(query, params);
     res.json(rows);
   } catch (err) {
     console.error("getRentals error", err);
@@ -79,11 +96,13 @@ export const getRentalById = async (req, res) => {
     const query = `
       SELECT 
         r.*, 
+        r.empleado_id,
         c.nombre as cliente_nombre, 
         c.apellido as cliente_apellido, 
         v.marca as vehiculo_marca, 
         v.modelo as vehiculo_modelo, 
-        v.placa as vehiculo_placa
+        v.placa as vehiculo_placa,
+        v.image_url as vehiculo_image_url
       FROM rentals r
       JOIN clients c ON r.cliente_id = c.id
       JOIN vehicles v ON r.vehiculo_id = v.id
@@ -93,6 +112,12 @@ export const getRentalById = async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ message: "Rental not found" });
     }
+
+    // Seguridad: Un cliente no puede ver detalles de alquileres que no le pertenecen
+    if (req.user && req.user.cargo === 'Cliente' && rows[0].cliente_id !== req.user.id) {
+      return res.status(403).json({ message: "No tienes permiso para ver este alquiler" });
+    }
+
     res.json(rows[0]);
   } catch (err) {
     console.error("getRentalById error", err);
@@ -131,15 +156,23 @@ const computeRentalTotal = async (client, vehicleId, fechaInicio, horaInicio, fe
   const start = new Date(`${fechaInicio}T${horaInicio || "00:00"}:00`);
   const end = new Date(`${fechaFin}T${horaFin || "00:00"}:00`);
   const diffMs = end - start;
-  const days = diffMs > 0 ? Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24))) : 1;
-  return Number((days * tarifa).toFixed(2));
+  const days = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 1;
+  const total = days * tarifa;
+  // Evitamos enviar NaN a la base de datos, lo que causaría un Error 500
+  return isNaN(total) ? 0 : Number(total.toFixed(2));
 };
 
 export const createRental = async (req, res) => {
   const client = await pool.connect();
   try {
-    const data = req.body;
-    await client.query("BEGIN");
+    const data = { ...req.body };
+    // Ensure IDs are numbers
+    data.cliente_id = parseInt(data.cliente_id);
+    data.vehiculo_id = parseInt(data.vehiculo_id);
+
+    if (isNaN(data.cliente_id) || isNaN(data.vehiculo_id)) {
+      return res.status(400).json({ message: "ID de cliente y vehículo son obligatorios" });
+    }
 
     const computedTotal = await computeRentalTotal(
       client,
@@ -150,7 +183,25 @@ export const createRental = async (req, res) => {
       data.hora_fin,
     );
 
-    const estadoAlquiler = String(data.estado_alquiler || 'activo').toLowerCase();
+    await client.query("BEGIN");
+
+    const estadoAlquiler = normalizeRentalStatus(data.estado_alquiler || 'activo');
+    
+    // Buscamos un empleado responsable válido en lugar de usar un ID estático que puede no existir
+    let empleadoId = parseInt(data.empleado_id);
+    const empCheck = await client.query("SELECT id FROM employees WHERE id = $1", [empleadoId]);
+
+    if (empCheck.rows.length === 0 || (req.user && req.user.cargo === 'Cliente')) {
+      const adminRes = await client.query(
+        "SELECT id FROM employees WHERE cargo = 'Administrador' ORDER BY id ASC LIMIT 1"
+      );
+      if (adminRes.rows.length > 0) {
+        empleadoId = adminRes.rows[0].id;
+      } else {
+        const anyEmpRes = await client.query("SELECT id FROM employees ORDER BY id ASC LIMIT 1");
+        if (anyEmpRes.rows.length > 0) empleadoId = anyEmpRes.rows[0].id;
+      }
+    }
 
     if (activeRentalStates.includes(estadoAlquiler)) {
       const isBlocked = await hasOverlappingActiveRental(
@@ -166,17 +217,17 @@ export const createRental = async (req, res) => {
     }
 
     const { rows } = await client.query(
-      "INSERT INTO rentals (cliente_id, vehiculo_id, id_empleado, fecha_inicio, hora_inicio, fecha_fin, hora_fin, kilometraje_inicio, kilometraje_fin, total, forma_pago, estado_alquiler) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *",
+      "INSERT INTO rentals (cliente_id, vehiculo_id, empleado_id, fecha_inicio, hora_inicio, fecha_fin, hora_fin, kilometraje_inicio, kilometraje_fin, total, forma_pago, estado_alquiler) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *",
       [
         data.cliente_id,
         data.vehiculo_id,
-        data.id_empleado,
+        empleadoId,
         data.fecha_inicio,
         data.hora_inicio,
         data.fecha_fin,
         data.hora_fin,
         data.kilometraje_inicio,
-        data.kilometraje_fin,
+        data.kilometraje_fin || null, // Aseguramos que sea null y no undefined
         computedTotal,
         data.forma_pago,
         estadoAlquiler,
@@ -236,7 +287,7 @@ export const updateRental = async (req, res) => {
 
     // Obtener datos actuales antes de la actualización
     const currentRental = await client.query(
-      "SELECT estado_alquiler, vehiculo_id FROM rentals WHERE id = $1",
+      "SELECT estado_alquiler, vehiculo_id, empleado_id FROM rentals WHERE id = $1",
       [id]
     );
 
@@ -245,18 +296,28 @@ export const updateRental = async (req, res) => {
       return res.status(404).json({ message: "Rental not found" });
     }
 
+    // Seguridad: Un Vendedor solo puede modificar alquileres donde él sea el responsable o que pertenezcan al sistema (ID 1)
+    if (req.user && req.user.cargo === 'Vendedor' && currentRental.rows[0].empleado_id !== req.user.id && currentRental.rows[0].empleado_id !== 1) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "No tienes permiso para modificar alquileres de otros empleados" });
+    }
+
     if (currentRental.rows[0].estado_alquiler === 'finalizado') {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "No se puede modificar un alquiler que ya ha sido finalizado" });
     }
 
     const oldVehiculoId = currentRental.rows[0].vehiculo_id;
-    const currentStatus = String(currentRental.rows[0].estado_alquiler || '').toLowerCase();
-    const newStatus = String(data.estado_alquiler || currentStatus).toLowerCase();
+    const currentStatus = normalizeRentalStatus(currentRental.rows[0].estado_alquiler || '');
+    const newStatus = normalizeRentalStatus(data.estado_alquiler || currentStatus);
 
+    // Lógica Automática: Si se intenta finalizar pero hay deudas, forzamos estado de pago_pendiente
     if (newStatus === 'finalizado' && await rentalHasPendingPayment(client, id)) {
       await client.query("ROLLBACK");
-      return res.status(400).json({ message: "No se puede finalizar un alquiler cuando hay pagos pendientes" });
+      return res.status(400).json({ 
+        message: "No se puede finalizar: El cliente tiene pagos pendientes.",
+        status_suggested: "pago_pendiente" 
+      });
     }
 
     if (activeRentalStates.includes(newStatus)) {
@@ -282,12 +343,13 @@ export const updateRental = async (req, res) => {
       data.hora_fin,
     );
 
+    const employeeId = data.id_empleado ?? data.empleado_id;
     const { rows } = await client.query(
-      "UPDATE rentals SET cliente_id=$1, vehiculo_id=$2, id_empleado=$3, fecha_inicio=$4, hora_inicio=$5, fecha_fin=$6, hora_fin=$7, kilometraje_inicio=$8, kilometraje_fin=$9, total=$10, forma_pago=$11, estado_alquiler=$12, notificado=FALSE WHERE id=$13 RETURNING *",
+      "UPDATE rentals SET cliente_id=$1, vehiculo_id=$2, empleado_id=$3, fecha_inicio=$4, hora_inicio=$5, fecha_fin=$6, hora_fin=$7, kilometraje_inicio=$8, kilometraje_fin=$9, total=$10, forma_pago=$11, estado_alquiler=$12, notificado=FALSE WHERE id=$13 RETURNING *",
       [
         data.cliente_id,
         data.vehiculo_id,
-        data.id_empleado,
+        employeeId,
         data.fecha_inicio,
         data.hora_inicio,
         data.fecha_fin,

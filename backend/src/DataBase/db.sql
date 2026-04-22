@@ -159,25 +159,69 @@ FOR EACH ROW
 EXECUTE FUNCTION public.update_rental_status_on_payment();
 
 -- Función que libera el vehículo cuando el alquiler finaliza
-CREATE OR REPLACE FUNCTION public.update_vehicle_availability_on_rental_finish()
+CREATE OR REPLACE FUNCTION public.sync_vehicle_status_on_rental()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Verificamos si el estado cambió a 'finalizado'
-    IF (NEW.estado_alquiler = 'finalizado' AND (OLD.estado_alquiler IS NULL OR OLD.estado_alquiler != 'finalizado')) THEN
-        -- Actualizamos el estado del vehículo a disponible (TRUE)
-        UPDATE public.vehicles 
-        SET estado = TRUE 
-        WHERE id = NEW.vehiculo_id;
+    -- Bloquear vehículo si el alquiler está activo o en proceso
+    IF (NEW.estado_alquiler IN ('activo', 'proceso', 'en_proceso')) THEN
+        UPDATE public.vehicles SET estado = FALSE WHERE id = NEW.vehiculo_id;
+    -- Liberar vehículo si se finaliza o cancela
+    ELSIF (NEW.estado_alquiler IN ('finalizado', 'cancelado')) THEN
+        UPDATE public.vehicles SET estado = TRUE WHERE id = NEW.vehiculo_id;
     END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger que se dispara al actualizar el estado de un alquiler
-CREATE TRIGGER trigger_update_vehicle_on_rental_finish
-AFTER UPDATE OF estado_alquiler ON public.rentals
+CREATE TRIGGER trigger_sync_vehicle_rental
+AFTER INSERT OR UPDATE OF estado_alquiler ON public.rentals
 FOR EACH ROW
-EXECUTE FUNCTION public.update_vehicle_availability_on_rental_finish();
+EXECUTE FUNCTION public.sync_vehicle_status_on_rental();
+
+-- Función que sincroniza el estado del vehículo basado en mantenimientos
+CREATE OR REPLACE FUNCTION public.sync_vehicle_status_on_maintenance()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Bloquear vehículo si entra en mantenimiento
+    IF (NEW.estado_mantenimiento IN ('pendiente', 'en servicio')) THEN
+        UPDATE public.vehicles SET estado = FALSE WHERE id = NEW.vehiculo_id;
+    -- Liberar vehículo si el mantenimiento termina o se cancela
+    ELSIF (NEW.estado_mantenimiento IN ('completado', 'cancelado')) THEN
+        UPDATE public.vehicles SET estado = TRUE WHERE id = NEW.vehiculo_id;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger que se dispara al insertar o actualizar un mantenimiento
+CREATE TRIGGER trigger_sync_vehicle_maintenance
+AFTER INSERT OR UPDATE OF estado_mantenimiento ON public.maintenance
+FOR EACH ROW
+EXECUTE FUNCTION public.sync_vehicle_status_on_maintenance();
+
+-- Función para evitar solapamientos entre mantenimientos y alquileres activos
+CREATE OR REPLACE FUNCTION public.check_maintenance_overlap()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Buscamos si existe algún alquiler activo para el mismo vehículo en el rango de fechas solicitado
+    IF EXISTS (
+        SELECT 1 FROM public.rentals 
+        WHERE vehiculo_id = NEW.vehiculo_id 
+          AND estado_alquiler IN ('activo', 'proceso', 'en_proceso')
+          AND (fecha_inicio <= NEW.fechafinal_mantenimiento AND fecha_fin >= NEW.fecha_mantenimiento)
+    ) THEN
+        RAISE EXCEPTION 'No se puede registrar mantenimiento: El vehículo tiene un alquiler activo o reservado en ese periodo.';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger que valida antes de insertar o actualizar un mantenimiento
+CREATE TRIGGER trigger_check_maintenance_overlap
+BEFORE INSERT OR UPDATE ON public.maintenance
+FOR EACH ROW
+EXECUTE FUNCTION public.check_maintenance_overlap();
 
 -- ==========================================================
 -- DATOS DE PRUEBA (INSERTS)

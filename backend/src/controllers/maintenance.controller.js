@@ -4,7 +4,7 @@ const activeRentalStates = ["activo", "proceso", "en_proceso"];
 
 const isVehicleCurrentlyRented = async (client, vehicleId) => {
   const { rows } = await client.query(
-    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler = ANY($2) AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin LIMIT 1",
+    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler = ANY($2) LIMIT 1",
     [vehicleId, activeRentalStates],
   );
   return rows.length > 0;
@@ -14,7 +14,7 @@ const activeMaintenanceStates = ["pendiente", "en servicio"];
 
 const isVehicleUnderMaintenanceToday = async (client, vehicleId) => {
   const { rows } = await client.query(
-    "SELECT 1 FROM maintenance WHERE vehiculo_id = $1 AND estado_mantenimiento = ANY($2) AND CURRENT_DATE BETWEEN fecha_mantenimiento AND fechafinal_mantenimiento LIMIT 1",
+    "SELECT 1 FROM maintenance WHERE vehiculo_id = $1 AND estado_mantenimiento = ANY($2) LIMIT 1",
     [vehicleId, activeMaintenanceStates],
   );
   return rows.length > 0;

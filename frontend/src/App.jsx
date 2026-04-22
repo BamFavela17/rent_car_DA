@@ -18,6 +18,7 @@ import Maintenance from "./pages/Maintenance/index.jsx";
 import Payments from "./pages/Payments/index.jsx";
 import Catalog from "./pages/Catalog";
 import Confirmations from "./pages/Confirmations";
+import PendingByPeriod from "./pages/Rentals/PendingByPeriod.jsx";
 import PageWrapper from "./PageWrapper.jsx";
 import Toast from "./Toast.jsx";
 import NotFound from "./components/NotFound";
@@ -109,6 +110,15 @@ function App() {
           element={
             <ProtectedRoute user={user} allowedRoles={['Administrador', 'Vendedor']}>
               <PageWrapper><Confirmations user={user} /></PageWrapper>
+            </ProtectedRoute>
+          } 
+        />
+
+        <Route 
+          path="/my-schedule" 
+          element={
+            <ProtectedRoute user={user}>
+              <PageWrapper><PendingByPeriod user={user} /></PageWrapper>
             </ProtectedRoute>
           } 
         />

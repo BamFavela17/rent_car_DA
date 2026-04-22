@@ -40,6 +40,9 @@ const Navbar = ({ user, setUser }) => {
             <Link to="/catalog" className="hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">
               Catálogo
             </Link>
+            {user && user.cargo === 'Cliente' && (
+              <Link to="/my-schedule" className="hover:text-indigo-400 px-3 py-2 text-sm font-medium transition-colors">Agenda</Link>
+            )}
 
             {user && (
               <div className="flex items-center gap-2 border-l border-gray-700 ml-2 pl-4">
@@ -55,10 +58,12 @@ const Navbar = ({ user, setUser }) => {
 
                 {isStaff && (
                   <>
+                    <Link to="/my-schedule" className="hover:bg-gray-800 px-3 py-2 rounded-md text-sm transition-all font-bold text-indigo-400">Agenda</Link>
                     <Link to="/cars" className="hover:bg-gray-800 px-3 py-2 rounded-md text-sm transition-all">Vehículos</Link>
                     <Link to="/clients" className="hover:bg-gray-800 px-3 py-2 rounded-md text-sm transition-all">Clientes</Link>
                     <Link to="/rentals" className="hover:bg-gray-800 px-3 py-2 rounded-md text-sm transition-all">Alquileres</Link>
                     <Link to="/maintenance" className="hover:bg-gray-800 px-3 py-2 rounded-md text-sm transition-all">Mantenimientos</Link>
+                    <Link to="/payments" className="hover:bg-gray-800 px-3 py-2 rounded-md text-sm transition-all">Pagos</Link>
                   </>
                 )}
               </div>
@@ -104,6 +109,7 @@ const Navbar = ({ user, setUser }) => {
       <div className={`${isOpen ? "block" : "hidden"} lg:hidden bg-gray-800 border-t border-gray-700`}>
         <div className="px-2 pt-2 pb-3 space-y-1">
           <Link to="/catalog" onClick={closeMenu} className="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-700">Catálogo</Link>
+          {user && user.cargo === 'Cliente' && <Link to="/my-schedule" onClick={closeMenu} className="block px-3 py-2 rounded-md text-base font-medium hover:bg-gray-700">Agenda</Link>}
           
           {user && (
             <div className="pt-4 pb-2 border-t border-gray-700 mt-2">
@@ -116,10 +122,12 @@ const Navbar = ({ user, setUser }) => {
               )}
               {isStaff && (
                 <>
+                  <Link to="/my-schedule" onClick={closeMenu} className="block px-3 py-2 text-indigo-400 font-bold">Agenda</Link>
                   <Link to="/cars" onClick={closeMenu} className="block px-3 py-2 hover:bg-gray-700">Vehículos</Link>
                   <Link to="/clients" onClick={closeMenu} className="block px-3 py-2 hover:bg-gray-700">Clientes</Link>
                   <Link to="/rentals" onClick={closeMenu} className="block px-3 py-2 hover:bg-gray-700">Alquileres</Link>
                   <Link to="/maintenance" onClick={closeMenu} className="block px-3 py-2 hover:bg-gray-700">Mantenimientos</Link>
+                  <Link to="/payments" onClick={closeMenu} className="block px-3 py-2 hover:bg-gray-700">Pagos</Link>
                 </>
               )}
             </div>

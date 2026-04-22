@@ -11,7 +11,7 @@ const normalizeRentalStatus = (status) => {
 
 const isVehicleCurrentlyRented = async (client, vehicleId) => {
   const { rows } = await client.query(
-    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler = ANY($2) AND CURRENT_DATE BETWEEN fecha_inicio AND fecha_fin LIMIT 1",
+    "SELECT 1 FROM rentals WHERE vehiculo_id = $1 AND estado_alquiler = ANY($2) LIMIT 1",
     [vehicleId, activeRentalStates],
   );
   return rows.length > 0;
@@ -19,7 +19,7 @@ const isVehicleCurrentlyRented = async (client, vehicleId) => {
 
 const isVehicleUnderMaintenanceToday = async (client, vehicleId) => {
   const { rows } = await client.query(
-    "SELECT 1 FROM maintenance WHERE vehiculo_id = $1 AND estado_mantenimiento != 'completado' AND CURRENT_DATE BETWEEN fecha_mantenimiento AND fechafinal_mantenimiento LIMIT 1",
+    "SELECT 1 FROM maintenance WHERE vehiculo_id = $1 AND estado_mantenimiento IN ('pendiente', 'en servicio') LIMIT 1",
     [vehicleId],
   );
   return rows.length > 0;
@@ -60,6 +60,7 @@ const rentalHasPendingPayment = async (client, rentalId) => {
 
 export const getRentals = async (req, res) => {
   try {
+    const { period, status } = req.query;
     let query = `
       SELECT 
         r.*, 
@@ -75,11 +76,29 @@ export const getRentals = async (req, res) => {
       JOIN vehicles v ON r.vehiculo_id = v.id
     `;
     const params = [];
+    const conditions = [];
 
     // Si el usuario es un Cliente, solo puede ver su propio historial
     if (req.user && req.user.cargo === 'Cliente') {
-      query += " WHERE r.cliente_id = $1";
       params.push(req.user.id);
+      conditions.push(`r.cliente_id = $${params.length}`);
+    }
+
+    if (status) {
+      params.push(status);
+      conditions.push(`r.estado_alquiler = $${params.length}`);
+    }
+
+    if (period === 'day') {
+      conditions.push("(r.fecha_inicio <= CURRENT_DATE AND r.fecha_fin >= CURRENT_DATE)");
+    } else if (period === 'week') {
+      conditions.push("(r.fecha_inicio <= (date_trunc('week', CURRENT_DATE) + INTERVAL '6 days') AND r.fecha_fin >= date_trunc('week', CURRENT_DATE))");
+    } else if (period === 'month') {
+      conditions.push("(r.fecha_inicio <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day') AND r.fecha_fin >= date_trunc('month', CURRENT_DATE))");
+    }
+
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
     }
 
     const { rows } = await pool.query(query, params);
